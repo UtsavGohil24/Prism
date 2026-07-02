@@ -1,0 +1,13 @@
+.env
+venv/
+ENV/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
