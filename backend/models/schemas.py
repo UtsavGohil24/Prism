@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import List
 
-class AnalyzeRequest(BaseModel):
+class AnalysisRequest(BaseModel):
     pr_url: str
 
 class FileRisk(BaseModel):
@@ -18,7 +18,7 @@ class Summary(BaseModel):
     low_risk_files: int
     total_bugs: int
 
-class ReportResponse(BaseModel):
+class AnalysisResponse(BaseModel):
     report_id: str
     pr_url: str
     pr_title: str
