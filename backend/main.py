@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import analyze
+from routers import analyze, report
 
 app = FastAPI(title="PRism API")
 
@@ -15,10 +15,11 @@ app.add_middleware(
 )
 
 app.include_router(analyze.router)
+app.include_router(report.router)
+
 
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
 
-# Run: uvicorn main:app --reload --port 8000

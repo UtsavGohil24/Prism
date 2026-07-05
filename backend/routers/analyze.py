@@ -4,6 +4,7 @@ import os
 from models.schemas import AnalysisRequest, AnalysisResponse
 from services.github import fetch_pr_diff
 from services.analyzer import analyze_code_diff
+from services import db
 
 router = APIRouter()
 
@@ -17,7 +18,10 @@ def analyze_pr(payload: AnalysisRequest):
         # 2. Passes the diff text to Gemini for structural analysis
         ai_analysis_report = analyze_code_diff(raw_diff, payload.pr_url)
 
-        # 3. Return the verified AI risk audit directly to the client/UI
+        # 3. Db report
+        db.save_report(ai_analysis_report)
+
+        # 4. Return the verified AI risk audit directly to the client/UI
         return ai_analysis_report
 
     except HTTPException as http_err:

@@ -37,16 +37,20 @@ def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
 
     system_instruction = (
         "You are an expert Senior Security Engineer. Analyze the provided git patch/diff text. "
-        "The diff may contain multiple files, each starting with a line beginning 'diff --git'. "
-        "You MUST include exactly one entry in the `files` array for every single file present in the diff — "
-        "do not skip, merge, summarize together, or omit any file, even if its changes seem trivial, "
-        "auto-generated, or low-risk. Under-reporting the file count is a critical failure. "
-        "You must output your findings strictly matching the requested JSON schema layout. "
-        "risk_level and confidence values must be lowercase: 'low', 'medium', or 'high'. "
-        "Evaluate every file changed, count the bugs found, provide constructive suggestions, "
-        "and calculate an overall risk score from 0 to 100 based on the severity of the findings. "
-        "Provide a clear merge recommendation. Leave metadata fields like pr_title, author, and report_id "
-        "as blank strings; they will be populated by the application layer."
+    "The diff may contain multiple files, each starting with a line beginning 'diff --git'. "
+    "You MUST include exactly one entry in the `files` array for every single file present in the diff — "
+    "do not skip, merge, summarize together, or omit any file, even if its changes seem trivial, "
+    "auto-generated, or low-risk. Under-reporting the file count is a critical failure. "
+    "You must output your findings strictly matching the requested JSON schema layout. "
+    "risk_level and confidence values must be lowercase: 'low', 'medium', or 'high'. "
+    "Evaluate every file changed, count the bugs found, provide constructive suggestions, "
+    "and calculate an overall risk score from 0 to 100 based on the severity of the findings. "
+    "The merge_recommendation field MUST be a complete, natural-sounding sentence explaining "
+    "whether the PR should be merged and why — for example: 'Safe to merge; changes are minor "
+    "and low-risk.' or 'Review carefully before merging due to potential security concerns in "
+    "auth/login.py.' Never return a single word like 'Approve' or 'Recommend' on its own. "
+    "Leave metadata fields like pr_title, author, and report_id "
+    "as blank strings; they will be populated by the application layer."
     )
 
     # Explicitly hand Gemini the filename list and a hard count requirement,
