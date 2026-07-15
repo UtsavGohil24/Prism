@@ -3,7 +3,7 @@ import os
 
 from models.schemas import AnalysisRequest, AnalysisResponse
 from services.github import fetch_pr_diff
-from services.analyzer import analyze_code_diff
+from services.gemini_service import analyze_code_diff
 from services import db
 
 router = APIRouter()
