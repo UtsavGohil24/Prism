@@ -3,8 +3,7 @@ import re
 import json
 import uuid
 from datetime import datetime, timezone
-from google import genai
-from google.genai import types
+from services.llm_client import generate_analysis_with_fallback
 from fastapi import HTTPException
 from models.schemas import AnalysisResponse
 from dotenv import load_dotenv
@@ -28,8 +27,6 @@ def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
             status_code=500,
             detail="Gemini API Key missing. Ensure GEMINI_API_KEY is defined in your .env file."
         )
-
-    client = genai.Client(api_key=api_key)
 
     filenames = extract_filenames(raw_diff)
     expected_file_count = len(filenames)
@@ -68,20 +65,15 @@ def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
         contents = f"Analyze this raw git patch text:\n\n{raw_diff}"
 
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
+        raw_text, fallback_used = generate_analysis_with_fallback(
+            api_key=api_key,
             contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                response_schema=AnalysisResponse,
-                temperature=0.2,
-                max_output_tokens=8192,
-            ),
+            system_instruction=system_instruction,
+            response_schema=AnalysisResponse,
         )
 
         try:
-            analysis_data = json.loads(response.text)
+            analysis_data = json.loads(raw_text)
         except json.JSONDecodeError:
             raise HTTPException(
                 status_code=502,
@@ -113,6 +105,7 @@ def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
         analysis_data["pr_url"] = pr_url
         analysis_data["report_id"] = f"REP-{uuid.uuid4().hex[:8].upper()}"
         analysis_data["created_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        analysis_data["fallback_used"] = fallback_used
 
         if not analysis_data.get("pr_title") or analysis_data["pr_title"] == "":
             analysis_data["pr_title"] = "Pull Request Optimization Review"
