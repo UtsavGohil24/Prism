@@ -43,7 +43,7 @@ def _call_gemini(client: genai.Client, contents: str, system_instruction: str,
                     system_instruction=system_instruction,
                     response_mime_type="application/json",
                     response_schema=response_schema,
-                    temperature=0.2,
+                    temperature=0.0,
                     max_output_tokens=8192,
                 ),
             )
