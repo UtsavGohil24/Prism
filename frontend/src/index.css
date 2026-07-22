@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+:root,
+[data-theme="dark"] {
+  --color-bg: #051424;
+  --color-surface-dim: #051424;
+  --color-surface-bright: #2c3a4c;
+  --color-surface-lowest: #010f1f;
+  --color-surface-low: #0d1c2d;
+  --color-surface: #122131;
+  --color-surface-high: #1c2b3c;
+  --color-surface-highest: #273647;
+  --color-on-surface: #d4e4fa;
+  --color-on-surface-variant: #c7c4d7;
+  --color-outline: #908fa0;
+  --color-outline-variant: #464554;
+  --color-primary: #c0c1ff;
+  --color-primary-container: #8083ff;
+  --color-secondary: #d0bcff;
+  --color-secondary-container: #571bc1;
+  --color-tertiary: #c1c6db;
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+
+  --color-glass-bg: rgba(30, 41, 59, 0.4);
+  --color-glass-border: rgba(51, 65, 85, 0.5);
+  --color-panel-bg: rgba(5, 20, 36, 0.4);
+}
+
+[data-theme="light"] {
+  --color-bg: #f4f6fb;
+  --color-surface-dim: #f4f6fb;
+  --color-surface-bright: #e2e8f0;
+  --color-surface-lowest: #ffffff;
+  --color-surface-low: #edf2f7;
+  --color-surface: #ffffff;
+  --color-surface-high: #eef1f7;
+  --color-surface-highest: #cbd5e1;
+  --color-on-surface: #1a2332;
+  --color-on-surface-variant: #4a5568;
+  --color-outline: #94a3b8;
+  --color-outline-variant: #cbd5e1;
+  --color-primary: #6366f1;
+  --color-primary-container: #4f46e5;
+  --color-secondary: #65558f;
+  --color-secondary-container: #e8ddff;
+  --color-tertiary: #7d5260;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+
+  --color-glass-bg: rgba(255, 255, 255, 0.6);
+  --color-glass-border: rgba(203, 213, 225, 0.6);
+  --color-panel-bg: rgba(255, 255, 255, 0.7);
+}
+
+@theme {
+  --color-bg: var(--color-bg);
+  --color-surface-dim: var(--color-surface-dim);
+  --color-surface-bright: var(--color-surface-bright);
+  --color-surface-lowest: var(--color-surface-lowest);
+  --color-surface-low: var(--color-surface-low);
+  --color-surface: var(--color-surface);
+  --color-surface-high: var(--color-surface-high);
+  --color-surface-highest: var(--color-surface-highest);
+  --color-on-surface: var(--color-on-surface);
+  --color-on-surface-variant: var(--color-on-surface-variant);
+  --color-outline: var(--color-outline);
+  --color-outline-variant: var(--color-outline-variant);
+  --color-primary: var(--color-primary);
+  --color-primary-container: var(--color-primary-container);
+  --color-secondary: var(--color-secondary);
+  --color-secondary-container: var(--color-secondary-container);
+  --color-tertiary: var(--color-tertiary);
+  --color-error: var(--color-error);
+  --color-error-container: var(--color-error-container);
+
+  /* Compatibility mappings for legacy variables */
+  --color-card: var(--color-surface);
+  --color-border: var(--color-outline-variant);
+  --color-accent: var(--color-primary-container);
+  --color-violet: var(--color-secondary-container);
+  --color-success: #10B981;
+  --color-warn: #F59E0B;
+  --color-danger: var(--color-error);
+  --color-textpri: var(--color-on-surface);
+  --color-textmuted: var(--color-on-surface-variant);
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-on-surface);
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+.glass-card {
+  background: var(--color-glass-bg);
+  border: 1px solid var(--color-glass-border);
+  backdrop-filter: blur(12px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  background: var(--color-surface-high);
+  border-color: var(--color-primary);
+  transform: translateY(-4px);
+}
+
+.glass-panel {
+  background: var(--color-panel-bg);
+  backdrop-filter: blur(24px);
+  border-top: 1px solid var(--color-glass-border);
+  border-left: 1px solid var(--color-glass-border);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+  border-right: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.tech-tracking {
+  letter-spacing: 0.05em;
+}
+
+.tech-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.primary-button {
+  background-color: var(--color-primary-container);
+  color: var(--color-bg);
+  box-shadow: 0px 4px 20px rgba(128, 131, 255, 0.25);
+  transition: transform 0.1s, background-color 0.3s ease;
+}
+
+.primary-button:active {
+  transform: scale(0.95);
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1;
+}
