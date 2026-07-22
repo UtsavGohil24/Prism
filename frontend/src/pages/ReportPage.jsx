@@ -9,6 +9,8 @@ import HeatmapGrid from '../components/HeatmapGrid'
 import ErrorState from '../components/ErrorState'
 import Sidebar from '../components/Sidebar'
 import SettingsDrawer from '../components/SettingsDrawer'
+import RiskComparisonCard from '../components/RiskComparisonCard'
+import RiskPercentileChart from '../components/RiskPercentileChart'
 
 export default function ReportPage() {
   const { report_id } = useParams()
@@ -323,6 +325,27 @@ export default function ReportPage() {
 
               </div>
             </section>
+
+            {/* Historical Risk Comparison Section */}
+            {data.comparison && (
+              <section className="space-y-4">
+                <div className="text-left space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider tech-mono text-primary">Historical Analytics</span>
+                  <h2 className="text-lg font-bold tracking-tight text-on-surface">Repo Risk Comparison</h2>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className={`${data.comparison.insufficient_data ? 'md:col-span-3' : 'md:col-span-1'}`}>
+                    <RiskComparisonCard comparison={data.comparison} />
+                  </div>
+                  {!data.comparison.insufficient_data && (
+                    <div className="md:col-span-2">
+                      <RiskPercentileChart comparison={data.comparison} />
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* 5. File Heatmap Section */}
             <section className="space-y-4">
