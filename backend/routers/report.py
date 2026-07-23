@@ -50,8 +50,19 @@ def chat_with_report(report_id: str, request: ChatRequest):
     try:
         report = db.get_report(report_id)  # raises 404 internally if missing
 
-        history = [turn.model_dump() for turn in request.history]
-        reply = get_chat_reply(report, request.message, history)
+        # Sanitize and validate request parameters
+        clean_message = request.message.strip()
+        if not clean_message:
+            raise HTTPException(status_code=400, detail="Message cannot be empty.")
+            
+        # Cap message length to avoid token flooding / context limit abuse
+        if len(clean_message) > 4000:
+            raise HTTPException(status_code=400, detail="Message exceeds maximum allowed length of 4000 characters.")
+
+        # Limit conversation history to the last 20 turns to maintain context integrity
+        history = [turn.model_dump() for turn in request.history[-20:]]
+        
+        reply = get_chat_reply(report, clean_message, history)
 
         return ChatResponse(reply=reply)
     except HTTPException:
