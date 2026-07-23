@@ -43,3 +43,14 @@ def get_risk_comparison(report_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/reports")
+def get_reports_list(limit: int = 20):
+    try:
+        reports = db.list_reports(limit)
+        return {"reports": reports}
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
