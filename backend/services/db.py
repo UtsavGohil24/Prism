@@ -88,6 +88,7 @@ def get_report(report_id: str) -> dict:
         "merge_recommendation": row["recommendation"],
         "summary": row["summary"],
         "files": row["files"],
+        "risk_factors": row.get("risk_factors") or [],
     }
 
 def get_repo_risk_scores(repo: str, exclude_report_id: str) -> list[int]:
@@ -147,7 +148,7 @@ def find_cached_report(pr_url: str, diff_hash: str) -> dict | None:
         "merge_recommendation": row["recommendation"],
         "summary": row["summary"],
         "files": row["files"],
-        "risk_factors": row["risk_factors"],
+        "risk_factors": row.get("risk_factors") or [],
     }
 
 
