@@ -32,36 +32,126 @@ def compute_diff_hash(raw_diff: str) -> str:
     """
     return hashlib.sha256(raw_diff.encode("utf-8")).hexdigest()
 
-SEVERITY_WEIGHTS = {"critical": 30, "moderate": 12, "minor": 4}
-RISK_LEVEL_WEIGHTS = {"high": 10, "medium": 3, "low": 0}
+def compute_risk_score(files: list[dict], risk_factors: list[dict]) -> int:
+    bug_score = bug_contribution(files)
+    structural_score = structural_contribution(risk_factors)
+    return round(min(bug_score + structural_score, 100))
 
-def compute_risk_score(files: list[dict]) -> int:
-    total_files = len(files)
-    if total_files == 0:
-        return 0
-
+def bug_contribution(files: list[dict]) -> float:
     all_bugs = [(f, bug) for f in files for bug in f.get("bugs", [])]
 
     if not all_bugs:
-        # No bugs found — score purely from file risk_level, capped low
-        high_risk = sum(1 for f in files if f.get("risk_level") == "high")
-        medium_risk = sum(1 for f in files if f.get("risk_level") == "medium")
-        return min(15, high_risk * 8 + medium_risk * 3)
+        return 0
 
+    total_files = len(files)
     severities = [bug.get("severity", "minor") for _, bug in all_bugs]
     affected_files = len(set(f["filename"] for f, _ in all_bugs))
     affected_ratio = affected_files / total_files
 
     if "critical" in severities:
-        low, high = 65, 100
+        low, high = 39, 60
     elif "moderate" in severities:
-        low, high = 30, 65
+        low, high = 18, 39
     else:
-        low, high = 10, 30
+        low, high = 6, 18
 
-    score = low + (high - low) * affected_ratio
+    return low + (high - low) * affected_ratio
 
-    return round(min(score, 100))
+STRUCTURAL_WEIGHTS = {
+    "security_sensitive_file": 12,
+    "core_file_modified": 8,
+    "large_blast_radius": 8,
+    "missing_test_coverage": 8,
+    "large_single_file": 4,
+}
+
+def structural_contribution(risk_factors: list[dict]) -> int:
+    triggered_types = set(
+        f["type"] for f in risk_factors if f["type"] in STRUCTURAL_WEIGHTS
+    )
+    return sum(STRUCTURAL_WEIGHTS[t] for t in triggered_types)
+
+SECURITY_KEYWORDS = ["auth", "security", "login", "token", "password", "session", "crypto", "prototype"]
+CORE_LOGIC_KEYWORDS = ["router", "middleware", "payment", "billing", "config"]
+
+LARGE_FILE_THRESHOLD = 30
+BLAST_RADIUS_THRESHOLD = 5
+
+def detect_risk_factors(files: list[dict], filenames: list[str]) -> list[dict]:
+    factors = []
+
+    # 1. Security-sensitive file touched
+    for f in files:
+        fname_lower = f["filename"].lower()
+        if any(kw in fname_lower for kw in SECURITY_KEYWORDS):
+            factors.append({
+                "type": "security_sensitive_file",
+                "reason": f"Security-sensitive file modified ({f['filename']})",
+                "source": f["filename"],
+                "points": STRUCTURAL_WEIGHTS["security_sensitive_file"]
+            })
+
+    # 2. Large blast radius
+    if len(files) >= BLAST_RADIUS_THRESHOLD:
+        factors.append({
+            "type": "large_blast_radius",
+            "reason": f"{len(files)} files changed — larger changes are harder to review thoroughly",
+            "source": "diff_size",
+            "points": STRUCTURAL_WEIGHTS["large_blast_radius"]
+        })
+
+    # 3. Core/critical file modified
+    for f in files:
+        fname_lower = f["filename"].lower()
+        if any(kw in fname_lower for kw in CORE_LOGIC_KEYWORDS):
+            factors.append({
+                "type": "core_file_modified",
+                "reason": f"Core file modified ({f['filename']})",
+                "source": f["filename"],
+                "points": STRUCTURAL_WEIGHTS["core_file_modified"]
+            })
+
+    # 4. Missing test coverage
+    non_test_files = [f for f in filenames if "test" not in f.lower()]
+    test_files = [f for f in filenames if "test" in f.lower()]
+    if non_test_files and not test_files:
+        factors.append({
+            "type": "missing_test_coverage",
+            "reason": "No test files updated despite code changes",
+            "source": "test_coverage",
+            "points": STRUCTURAL_WEIGHTS["missing_test_coverage"]
+        })
+
+    # 5. Large single-file change
+    for f in files:
+        if f.get("lines_changed", 0) >= LARGE_FILE_THRESHOLD:
+            factors.append({
+                "type": "large_single_file",
+                "reason": f"Large change in {f['filename']} ({f['lines_changed']} lines)",
+                "source": f["filename"],
+                "points": STRUCTURAL_WEIGHTS["large_single_file"]
+            })
+
+    return factors
+
+def dedupe_risk_factors(factors: list[dict]) -> list[dict]:
+    grouped = {}
+    for f in factors:
+        t = f["type"]
+        if t not in grouped:
+            grouped[t] = {"type": t, "reason": [], "source": [], "points": f["points"]}
+        grouped[t]["reason"].append(f["reason"])
+        grouped[t]["source"].append(f["source"])
+
+    result = []
+    for t, g in grouped.items():
+        result.append({
+            "type": t,
+            "reason": "; ".join(g["reason"]) if len(g["reason"]) > 1 else g["reason"][0],
+            "source": ", ".join(g["source"]),
+            "points": g["points"]
+        })
+    return result
 
 def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
     api_key = os.getenv("GEMINI_API_KEY")
@@ -174,8 +264,24 @@ def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
             "total_bugs": sum(len(f.get("bugs", [])) for f in files),
         }
 
+        # --- Detect pattern-based risk factors for explainability ---
+        analysis_data["risk_factors"] = detect_risk_factors(files, filenames)
+
+        # --- Add the real bug contribution as its own scored factor ---
+        bug_points = round(bug_contribution(files))
+        if bug_points > 0:
+            analysis_data["risk_factors"].append({
+                "type": "bug_findings",
+                "reason": "Combined severity and concentration of bugs found across the diff",
+                "source": "bugs",
+                "points": bug_points
+            })
+
+        # --- Collapse duplicate factor types into one entry each, for clean display ---
+        analysis_data["risk_factors"] = dedupe_risk_factors(analysis_data["risk_factors"])
+        
         # --- Recompute overall_risk_score programmatically
-        analysis_data["overall_risk_score"] = compute_risk_score(files)
+        analysis_data["overall_risk_score"] = compute_risk_score(files, analysis_data["risk_factors"])
 
         # --- Dynamic Post-Processing Meta Injection ---
         analysis_data["pr_url"] = pr_url
