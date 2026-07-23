@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
-from models.schemas import AnalysisResponse
+from models.schemas import AnalysisResponse, ChatRequest, ChatResponse
+from services.chat_service import get_chat_reply
 from services import db
 from services.comparison import compute_comparison
 
@@ -39,6 +40,20 @@ def get_risk_comparison(report_id: str):
             current["repo"]
         )
         return comparison
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/report/{report_id}/chat", response_model=ChatResponse)
+def chat_with_report(report_id: str, request: ChatRequest):
+    try:
+        report = db.get_report(report_id)  # raises 404 internally if missing
+
+        history = [turn.model_dump() for turn in request.history]
+        reply = get_chat_reply(report, request.message, history)
+
+        return ChatResponse(reply=reply)
     except HTTPException:
         raise
     except Exception as e:
