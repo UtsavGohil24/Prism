@@ -32,8 +32,15 @@ export default function RiskComparisonCard({ comparison }) {
     return 'text-success'
   }
 
+  const getPercentileColorClass = (pct) => {
+    if (pct > 66) return 'text-danger'
+    if (pct >= 33) return 'text-warn'
+    return 'text-success'
+  }
+
   const currentScoreColor = getRiskColorClass(current_score)
   const medianColor = getRiskColorClass(median)
+  const percentileColor = getPercentileColorClass(percentile)
 
   // Double-sided framing for percentile to make it natural and readable
   const percentileText = percentile >= 50
@@ -69,10 +76,10 @@ export default function RiskComparisonCard({ comparison }) {
 
         {/* Percentile Text Banner */}
         <div className="p-3 bg-surface-bright/20 border border-outline-variant/30 rounded-xl flex items-center gap-2">
-          <span className={`material-symbols-outlined text-lg ${currentScoreColor}`}>
+          <span className={`material-symbols-outlined text-lg ${percentileColor}`}>
             {percentile >= 50 ? 'trending_up' : 'trending_down'}
           </span>
-          <span className={`text-xs font-semibold ${currentScoreColor}`}>
+          <span className={`text-xs font-semibold ${percentileColor}`}>
             {percentileText}
           </span>
         </div>
