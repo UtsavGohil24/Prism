@@ -46,6 +46,7 @@ def save_report(analysis_data: dict) -> dict:
             "recommendation": analysis_data["merge_recommendation"],
             "summary": analysis_data["summary"],
             "files": analysis_data["files"],
+            "risk_factors": analysis_data["risk_factors"],
         }).execute()
     except Exception as e:
         raise HTTPException(
@@ -146,4 +147,5 @@ def find_cached_report(pr_url: str, diff_hash: str) -> dict | None:
         "merge_recommendation": row["recommendation"],
         "summary": row["summary"],
         "files": row["files"],
+        "risk_factors": row["risk_factors"],
     }

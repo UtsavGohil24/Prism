@@ -44,7 +44,7 @@ def _call_gemini(client: genai.Client, contents: str, system_instruction: str,
                     response_mime_type="application/json",
                     response_schema=response_schema,
                     temperature=0.0,
-                    max_output_tokens=8192,
+                    max_output_tokens=16384, 
                 ),
             )
             if not response or not response.text:

@@ -18,6 +18,12 @@ class FileRisk(BaseModel):
     bugs: List[Bug] = Field(default_factory=list)
     suggestions: List[str] = Field(default_factory=list)
 
+class RiskFactor(BaseModel):
+    type: str
+    reason: str
+    source: str
+    points: int | None = None
+
 class Summary(BaseModel):
     total_files: int
     high_risk_files: int
@@ -46,3 +52,4 @@ class AnalysisResponse(BaseModel):
     summary: Summary
     files: List[FileRisk]
     comparison: Comparison
+    risk_factors: List[RiskFactor] 
