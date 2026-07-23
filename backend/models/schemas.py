@@ -53,3 +53,14 @@ class AnalysisResponse(BaseModel):
     files: List[FileRisk]
     comparison: Comparison
     risk_factors: List[RiskFactor] 
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+class ChatRequest(BaseModel):
+    message: str
+    history: List[ChatMessage] = Field(default_factory=list)
+
+class ChatResponse(BaseModel):
+    reply: str

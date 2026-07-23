@@ -88,6 +88,7 @@ def get_report(report_id: str) -> dict:
         "merge_recommendation": row["recommendation"],
         "summary": row["summary"],
         "files": row["files"],
+        "risk_factors": row["risk_factors"],
     }
 
 def get_repo_risk_scores(repo: str, exclude_report_id: str) -> list[int]:
