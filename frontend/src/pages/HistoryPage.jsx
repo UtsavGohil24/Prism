@@ -132,13 +132,13 @@ export default function HistoryPage() {
                         <RiskBadge level={report.confidence} type="confidence" />
                         <div className="w-12 text-center">
                           <div className={`text-lg font-extrabold ${
-                            report.risk_score >= 70 
+                            report.overall_risk_score >= 70 
                               ? 'text-error' 
-                              : report.risk_score >= 35 
+                              : report.overall_risk_score >= 35 
                                 ? 'text-tertiary' 
                                 : 'text-primary'
                           }`}>
-                            {report.risk_score}
+                            {report.overall_risk_score}
                           </div>
                           <div className="text-[9px] font-bold text-on-surface-variant/60 tech-mono">RISK</div>
                         </div>

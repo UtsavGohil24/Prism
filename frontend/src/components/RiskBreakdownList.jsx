@@ -1,6 +1,8 @@
-import React from 'react'
+import React, { useState } from 'react'
 
 export default function RiskBreakdownList({ riskFactors = [], overallRiskScore = 0 }) {
+  const [isExpanded, setIsExpanded] = useState(true)
+
   // Sort factors by points descending
   const sortedFactors = [...riskFactors].sort((a, b) => (b.points || 0) - (a.points || 0))
 
@@ -66,14 +68,22 @@ export default function RiskBreakdownList({ riskFactors = [], overallRiskScore =
           <span className="text-[10px] font-bold uppercase tracking-wider tech-mono text-primary">Explainable AI</span>
           <h3 className="text-lg font-bold text-on-surface">Risk Score Breakdown</h3>
         </div>
-        <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full text-xs font-extrabold uppercase tracking-wider tech-mono">
+        <button
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          aria-expanded={isExpanded}
+          className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full text-xs font-extrabold uppercase tracking-wider tech-mono cursor-pointer hover:bg-primary/20 transition-all"
+        >
           <span>Overall Score:</span>
           <span className="text-sm font-black">{overallRiskScore}/100</span>
-        </div>
+          <span className={`material-symbols-outlined text-sm transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
+            expand_more
+          </span>
+        </button>
       </div>
 
       {/* Content */}
-      <div className="flex-1">
+      <div className={`flex-1 overflow-hidden transition-all duration-300 ease-out ${isExpanded ? 'max-h-[3000px] opacity-100' : 'max-h-0 opacity-0'}`}>
         {sortedFactors.length === 0 ? (
           <div className="py-8 flex flex-col items-center justify-center text-center space-y-3 text-on-surface-variant">
             <span className="material-symbols-outlined text-3xl opacity-50">verified</span>
