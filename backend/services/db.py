@@ -148,5 +148,28 @@ def find_cached_report(pr_url: str, diff_hash: str) -> dict | None:
         "merge_recommendation": row["recommendation"],
         "summary": row["summary"],
         "files": row["files"],
-        "risk_factors": row["risk_factors"],
+        "risk_factors": row.get("risk_factors") or [],
     }
+
+
+def list_reports(limit: int = 20) -> list[dict]:
+    """
+    Fetches a list of historical analysis reports, sorted by creation date descending.
+    """
+    sb = get_client()
+
+    try:
+        result = (
+            sb.table("reports")
+            .select("report_id, pr_title, pr_url, author, created_at, confidence, risk_score")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch reports list from database: {str(e)}"
+        )
+
+    return result.data
