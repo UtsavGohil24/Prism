@@ -1,12 +1,16 @@
-import axios from 'axios'
-const BASE = import.meta.env.VITE_API_BASE_URL
+import apiClient from '../lib/apiClient'
+
 export const analyzePR = (prUrl) =>
-  axios.post(`${BASE}/analyze`, { pr_url: prUrl }).then(r => r.data)
+  apiClient.post(`/analyze`, { pr_url: prUrl }).then(r => r.data)
+
 export const getReport = (reportId) =>
-  axios.get(`${BASE}/report/${reportId}`).then(r => r.data)
+  apiClient.get(`/report/${reportId}`).then(r => r.data)
 
 export const getSystemStatus = () =>
-  axios.get(`${BASE}/status`).then(r => r.data)
+  apiClient.get(`/status`).then(r => r.data)
 
 export const listReports = (limit = 20) =>
-  axios.get(`${BASE}/reports`, { params: { limit } }).then(r => r.data)
+  apiClient.get(`/reports`, { params: { limit } }).then(r => r.data)
+
+export const chatWithReport = (reportId, message, history = []) =>
+  apiClient.post(`/report/${reportId}/chat`, { message, history }).then(r => r.data)

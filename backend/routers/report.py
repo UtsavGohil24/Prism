@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from models.schemas import AnalysisResponse, ChatRequest, ChatResponse
-from services.chat_service import get_chat_reply
+from models.schemas import AnalysisResponse
 from services import db
 from services.comparison import compute_comparison
 
@@ -45,27 +44,13 @@ def get_risk_comparison(report_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/report/{report_id}/chat", response_model=ChatResponse)
-def chat_with_report(report_id: str, request: ChatRequest):
+
+@router.get("/reports")
+def get_reports_list(limit: int = 20):
     try:
-        report = db.get_report(report_id)  # raises 404 internally if missing
-
-        # Sanitize and validate request parameters
-        clean_message = request.message.strip()
-        if not clean_message:
-            raise HTTPException(status_code=400, detail="Message cannot be empty.")
-            
-        # Cap message length to avoid token flooding / context limit abuse
-        if len(clean_message) > 4000:
-            raise HTTPException(status_code=400, detail="Message exceeds maximum allowed length of 4000 characters.")
-
-        # Limit conversation history to the last 20 turns to maintain context integrity
-        history = [turn.model_dump() for turn in request.history[-20:]]
-        
-        reply = get_chat_reply(report, clean_message, history)
-
-        return ChatResponse(reply=reply)
-    except HTTPException:
-        raise
+        reports = db.list_reports(limit)
+        return {"reports": reports}
+    except HTTPException as http_err:
+        raise http_err
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
