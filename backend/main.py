@@ -11,6 +11,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",  # local dev
+        "http://localhost:5174",  # local dev fallback
+        "http://localhost:5175",  # local dev fallback
         os.getenv("FRONTEND_URL", "http://localhost:5173"),  # deployed frontend, set via env var
     ],
     allow_credentials=True,
