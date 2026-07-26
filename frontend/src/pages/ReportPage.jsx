@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
 import { getReport } from '../utils/api'
-import { exportReportPDF } from '../utils/pdfExport'
+import { exportAuditPDF } from '../pdf/PdfExportRunner'
 import RiskMeter from '../components/RiskMeter'
 import RiskBadge from '../components/RiskBadge'
 import HeatmapGrid from '../components/HeatmapGrid'
@@ -12,6 +12,7 @@ import SettingsDrawer from '../components/SettingsDrawer'
 import RiskComparisonCard from '../components/RiskComparisonCard'
 import RiskPercentileChart from '../components/RiskPercentileChart'
 import RiskBreakdownList from '../components/RiskBreakdownList'
+import PRChatWidget from '../components/PRChatWidget'
 
 // TEMP DEBUG TOGGLE — DO NOT COMMIT AS NON-NULL. Remove this whole block 
 // once visual verification is complete.
@@ -64,7 +65,7 @@ export default function ReportPage() {
 
   const handleDownloadPDF = async () => {
     try {
-      await exportReportPDF(report_id)
+      await exportAuditPDF(data)
     } catch (err) {
       console.error('PDF export failed', err)
     }
@@ -171,6 +172,7 @@ export default function ReportPage() {
   ]
 
   return (
+    <>
     <div className="min-h-screen text-on-surface flex bg-transparent">
       {/* 1. Shared Left Sidebar */}
       <Sidebar activePage="" onOpenSettings={() => setIsSettingsOpen(true)} />
@@ -179,7 +181,7 @@ export default function ReportPage() {
       <SettingsDrawer isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       {/* Main Content Layout */}
-      <div className="flex-1 flex flex-col md:ml-64">
+      <div className="flex-1 flex flex-col md:ml-64 min-w-0 overflow-x-hidden">
         {/* 2. Top Bar */}
         <header className="fixed top-0 right-0 left-0 md:left-64 h-16 bg-surface-dim/40 backdrop-blur-xl border-b border-outline-variant/30 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-30">
           {/* Logo & PR Details */}
@@ -217,7 +219,7 @@ export default function ReportPage() {
         </header>
 
         {/* Main Content Panel */}
-        <main className="pt-20 px-4 sm:px-6 lg:px-8 py-8 space-y-8 flex-1 flex flex-col justify-between">
+        <main className="pt-20 px-4 sm:px-6 lg:px-8 py-8 space-y-8 flex-1 flex flex-col justify-between min-w-0 overflow-x-hidden">
           
           {/* PDF Capture Box */}
           <div id="report-capture" className="space-y-8 text-left bg-transparent p-1">
@@ -244,10 +246,10 @@ export default function ReportPage() {
             </section>
 
             {/* 4. Bento Grid (3 columns on lg) */}
-            <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0">
               
               {/* Left Bento Card: Risk Score & Recommendation (1 col) */}
-              <div className="glass-panel p-6 rounded-2xl flex flex-col items-center justify-between relative min-h-[340px] shadow-sm">
+              <div className="glass-panel p-6 rounded-2xl flex flex-col items-center justify-between relative min-h-[340px] shadow-sm min-w-0 overflow-hidden">
                 {/* Confidence Badge in corner */}
                 <div className="absolute top-4 right-4">
                   <RiskBadge level={data.confidence} type="confidence" />
@@ -265,12 +267,12 @@ export default function ReportPage() {
                 {/* Recommendation */}
                 <div className="w-full text-left mt-4 border-t border-outline-variant/30 pt-4">
                   <span className="text-[10px] font-bold uppercase tracking-wider tech-mono text-primary">Recommendation</span>
-                  <p className="text-sm text-on-surface mt-1 leading-relaxed">{data.merge_recommendation}</p>
+                  <p className="text-sm text-on-surface mt-1 leading-relaxed line-clamp-4" title={data.merge_recommendation}>{data.merge_recommendation}</p>
                 </div>
               </div>
 
               {/* Right Bento Column: Stats and PieChart (2 cols) */}
-              <div className="lg:col-span-2 flex flex-col gap-6">
+              <div className="lg:col-span-2 flex flex-col gap-6 min-w-0">
                 
                 {/* a) 4-up statistics card grid */}
                 <div className="grid grid-cols-2 gap-4">
@@ -427,5 +429,9 @@ export default function ReportPage() {
         </main>
       </div>
     </div>
+
+    {/* Floating PR Chat Widget — scoped to this report */}
+    <PRChatWidget reportId={report_id} />
+    </>
   )
 }

@@ -7,6 +7,7 @@ import ReportPage from './pages/ReportPage'
 import HistoryPage from './pages/HistoryPage'
 import NotFound from './pages/NotFound'
 import AnimatedBackground from './components/AnimatedBackground'
+import ErrorBoundary from './components/ErrorBoundary'
 
 function App() {
   return (
@@ -18,7 +19,7 @@ function App() {
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/analyze" element={<AnalyzePage />} />
-            <Route path="/report/:report_id" element={<ReportPage />} />
+            <Route path="/report/:report_id" element={<ErrorBoundary><ReportPage /></ErrorBoundary>} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
