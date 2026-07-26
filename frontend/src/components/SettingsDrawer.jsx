@@ -169,7 +169,7 @@ export default function SettingsDrawer({ isOpen, onClose }) {
               <div className="space-y-1.5 pt-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider tech-mono text-on-surface-variant">API Endpoint URL</span>
                 <div className="bg-surface-lowest/70 border border-outline-variant/40 rounded-lg p-2 select-all break-all text-[10px] text-on-surface font-mono">
-                  {import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}
+                  {import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}
                 </div>
               </div>
             </div>

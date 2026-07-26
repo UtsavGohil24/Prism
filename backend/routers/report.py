@@ -45,6 +45,18 @@ def get_risk_comparison(report_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/reports")
+def get_reports_list(limit: int = 20):
+    try:
+        reports = db.list_reports(limit)
+        return {"reports": reports}
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/report/{report_id}/chat", response_model=ChatResponse)
 def chat_with_report(report_id: str, request: ChatRequest):
     try:
@@ -69,14 +81,3 @@ def chat_with_report(report_id: str, request: ChatRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/reports")
-def get_reports_list(limit: int = 20):
-    try:
-        reports = db.list_reports(limit)
-        return {"reports": reports}
-    except HTTPException as http_err:
-        raise http_err
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
