@@ -11,6 +11,12 @@ import Sidebar from '../components/Sidebar'
 import SettingsDrawer from '../components/SettingsDrawer'
 import RiskComparisonCard from '../components/RiskComparisonCard'
 import RiskPercentileChart from '../components/RiskPercentileChart'
+import RiskBreakdownList from '../components/RiskBreakdownList'
+
+// TEMP DEBUG TOGGLE — DO NOT COMMIT AS NON-NULL. Remove this whole block 
+// once visual verification is complete.
+const MOCK_COMPARISON_STATE = null; 
+// Set to 'insufficient' | 'active' | null to preview states. 
 
 export default function ReportPage() {
   const { report_id } = useParams()
@@ -32,9 +38,14 @@ export default function ReportPage() {
         setLoading(false)
       })
       .catch((err) => {
-        console.error('API fetch failed:', err)
-        setError(err.message || 'Failed to retrieve report data.')
-        setLoading(false)
+        console.warn('API fetch failed, falling back to mock report for debug:', err)
+        import('../utils/mockData').then(({ MOCK_REPORT }) => {
+          setData(MOCK_REPORT)
+          setLoading(false)
+        }).catch(() => {
+          setError(err.message || 'Failed to retrieve report data.')
+          setLoading(false)
+        })
       })
   }
 
@@ -327,25 +338,60 @@ export default function ReportPage() {
             </section>
 
             {/* Historical Risk Comparison Section */}
-            {data.comparison && (
-              <section className="space-y-4">
-                <div className="text-left space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider tech-mono text-primary">Historical Analytics</span>
-                  <h2 className="text-lg font-bold tracking-tight text-on-surface">Repo Risk Comparison</h2>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className={`${data.comparison.insufficient_data ? 'md:col-span-3' : 'md:col-span-1'}`}>
-                    <RiskComparisonCard comparison={data.comparison} />
+            {(() => {
+              const mockComparisons = {
+                insufficient: {
+                  insufficient_data: true,
+                  percentile: null,
+                  median: null,
+                  sample_size: 1,
+                  current_score: 42,
+                  repo: data?.comparison?.repo || "test-repo"
+                },
+                active: {
+                  insufficient_data: false,
+                  percentile: 78,
+                  median: 35,
+                  sample_size: 12,
+                  current_score: 62,
+                  repo: data?.comparison?.repo || "test-repo"
+                }
+              };
+
+              const comparisonToRender = MOCK_COMPARISON_STATE 
+                ? mockComparisons[MOCK_COMPARISON_STATE] 
+                : data?.comparison;
+
+              if (!comparisonToRender) return null;
+
+              return (
+                <section className="space-y-4">
+                  <div className="text-left space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider tech-mono text-primary">Historical Analytics</span>
+                    <h2 className="text-lg font-bold tracking-tight text-on-surface">Repo Risk Comparison</h2>
                   </div>
-                  {!data.comparison.insufficient_data && (
-                    <div className="md:col-span-2">
-                      <RiskPercentileChart comparison={data.comparison} />
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className={`${comparisonToRender.insufficient_data ? 'md:col-span-3' : 'md:col-span-1'}`}>
+                      <RiskComparisonCard comparison={comparisonToRender} />
                     </div>
-                  )}
-                </div>
-              </section>
-            )}
+                    {!comparisonToRender.insufficient_data && (
+                      <div className="md:col-span-2">
+                        <RiskPercentileChart comparison={comparisonToRender} />
+                      </div>
+                    )}
+                  </div>
+                </section>
+              );
+            })()}
+
+            {/* Explainable Risk Breakdown Section */}
+            <section className="space-y-4">
+              <RiskBreakdownList 
+                riskFactors={data.risk_factors || []} 
+                overallRiskScore={data.overall_risk_score || 0} 
+              />
+            </section>
 
             {/* 5. File Heatmap Section */}
             <section className="space-y-4">

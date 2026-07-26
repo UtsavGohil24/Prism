@@ -22,14 +22,14 @@ export default function RiskPercentileChart({ comparison }) {
     }
   ]
 
-  // Decide color of the percentile marker/bar based on current_score
-  const getScoreColor = (score) => {
-    if (score >= 70) return 'var(--color-error)'
-    if (score >= 35) return '#F59E0B' // warning yellow/orange
+  // Decide color of the percentile marker/bar based on percentile
+  const getPercentileColor = (pct) => {
+    if (pct > 66) return 'var(--color-error)'
+    if (pct >= 33) return '#F59E0B' // warning yellow/orange
     return '#10B981' // green
   }
 
-  const scoreColor = getScoreColor(current_score)
+  const scoreColor = getPercentileColor(percentile)
 
   return (
     <div className="glass-panel p-6 rounded-2xl shadow-sm text-left flex flex-col justify-between min-h-[160px] h-full relative overflow-hidden">
