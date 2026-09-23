@@ -14,7 +14,12 @@ export default function AnalyzePage() {
 
   // Track state of API response and loading screen animation completion
   const apiDataRef = useRef(null)
+  const stepsFinishedRef = useRef(false)
   const [stepsFinished, setStepsFinished] = useState(false)
+
+  // Guards against React StrictMode's dev-mode double-invocation of effects,
+  // which would otherwise fire runAnalysis() twice and create two reports.
+  const hasRunForUrlRef = useRef(null)
 
   const runAnalysis = () => {
     if (!prUrl) {
@@ -26,13 +31,17 @@ export default function AnalyzePage() {
     setLoading(true)
     setError(null)
     setStepsFinished(false)
+    stepsFinishedRef.current = false
     apiDataRef.current = null
 
     analyzePR(prUrl)
       .then((data) => {
         apiDataRef.current = data
-        // Redirect immediately once the API response is received
-        navigate(`/report/${data.report_id}`)
+        // Only navigate now if the loading animation already finished;
+        // otherwise handleLoadingFinished will navigate once it completes.
+        if (stepsFinishedRef.current) {
+          navigate(`/report/${data.report_id}`, { replace: true })
+        }
       })
       .catch((err) => {
         console.error(err)
@@ -43,15 +52,18 @@ export default function AnalyzePage() {
 
   // Run on mount or when URL changes
   useEffect(() => {
+    if (hasRunForUrlRef.current === prUrl) return
+    hasRunForUrlRef.current = prUrl
     runAnalysis()
   }, [prUrl])
 
   // Fired when the 3 animated loading stages (4.5s total) complete
   const handleLoadingFinished = () => {
+    stepsFinishedRef.current = true
     setStepsFinished(true)
     // If the API call has already completed, navigate now
     if (apiDataRef.current) {
-      navigate(`/report/${apiDataRef.current.report_id}`)
+      navigate(`/report/${apiDataRef.current.report_id}`, { replace: true })
     }
   }
 

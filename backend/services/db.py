@@ -92,21 +92,26 @@ def get_report(report_id: str) -> dict:
     }
 
 def get_repo_risk_scores(repo: str, exclude_report_id: str) -> list[int]:
-
     sb = get_client()
 
     try:
-        result = sb.table("reports").select("risk_score, report_id").eq("repo", repo).execute()
+        result = sb.table("reports").select("risk_score, report_id, pr_url").eq("repo", repo).execute()
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch repo history from database: {str(e)}"
         )
 
+    # Find the PR this report belongs to, then exclude every version of that PR
+    current_pr_url = next(
+        (row["pr_url"] for row in result.data if row["report_id"] == exclude_report_id),
+        None,
+    )
+
     return [
         row["risk_score"]
         for row in result.data
-        if row["report_id"] != exclude_report_id
+        if row["report_id"] != exclude_report_id and row["pr_url"] != current_pr_url
     ]
 
 def find_cached_report(pr_url: str, diff_hash: str) -> dict | None:
@@ -161,7 +166,7 @@ def list_reports(limit: int = 20) -> list[dict]:
     try:
         result = (
             sb.table("reports")
-            .select("report_id, pr_title, pr_url, author, created_at, confidence, risk_score")
+            .select("report_id, pr_title, pr_url, repo, diff_hash, author, created_at, confidence, risk_score")
             .order("created_at", desc=True)
             .limit(limit)
             .execute()
