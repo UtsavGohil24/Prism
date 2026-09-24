@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,16 +7,16 @@ from routers import analyze, report
 
 app = FastAPI(title="PRism API")
 
-import os
+_origins = {
+    "http://localhost:5173",  # local dev
+    "http://localhost:5174",  # local dev fallback
+    "http://localhost:5175",  # local dev fallback
+    os.getenv("FRONTEND_URL", "http://localhost:5173"),  # deployed frontend, set via env var
+}
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # local dev
-        "http://localhost:5174",  # local dev fallback
-        "http://localhost:5175",  # local dev fallback
-        os.getenv("FRONTEND_URL", "http://localhost:5173"),  # deployed frontend, set via env var
-    ],
+    allow_origins=sorted(_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,7 +24,6 @@ app.add_middleware(
 
 app.include_router(analyze.router)
 app.include_router(report.router)
-
 
 
 @app.get("/health")
@@ -35,6 +36,7 @@ def get_status():
     return {
         "github_token": bool(os.getenv("GITHUB_TOKEN")),
         "gemini_api_key": bool(os.getenv("GEMINI_API_KEY")),
+        "openrouter_api_key": bool(os.getenv("OPENROUTER_API_KEY")),
         "groq_api_key": bool(os.getenv("GROQ_API_KEY")),
-        "supabase_configured": bool(os.getenv("SUPABASE_URL")) and bool(os.getenv("SUPABASE_KEY"))
+        "supabase_configured": bool(os.getenv("SUPABASE_URL")) and bool(os.getenv("SUPABASE_KEY")),
     }

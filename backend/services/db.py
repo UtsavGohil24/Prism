@@ -3,12 +3,15 @@ from supabase import create_client
 from dotenv import load_dotenv
 from fastapi import HTTPException
 
+from services.llm_client import MODEL_LABELS, MODEL_ALIASES
+
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 _sb_client = None
+
 
 def get_client():
     """
@@ -26,6 +29,12 @@ def get_client():
         _sb_client = create_client(SUPABASE_URL, SUPABASE_KEY)
     return _sb_client
 
+
+def _normalize_url(pr_url: str) -> str:
+    """'.../pull/1' and '.../pull/1/' must count as the same PR."""
+    return pr_url.strip().rstrip("/")
+
+
 def save_report(analysis_data: dict) -> dict:
     """
     Persists a completed analysis report to Supabase.
@@ -35,8 +44,8 @@ def save_report(analysis_data: dict) -> dict:
     try:
         sb.table("reports").insert({
             "report_id": analysis_data["report_id"],
-            "pr_url": analysis_data["pr_url"],
-            "repo": analysis_data["repo"], 
+            "pr_url": _normalize_url(analysis_data["pr_url"]),
+            "repo": analysis_data["repo"],
             "diff_hash": analysis_data["diff_hash"],
             "pr_title": analysis_data["pr_title"],
             "author": analysis_data["author"],
@@ -47,6 +56,7 @@ def save_report(analysis_data: dict) -> dict:
             "summary": analysis_data["summary"],
             "files": analysis_data["files"],
             "risk_factors": analysis_data["risk_factors"],
+            "model_used": analysis_data.get("model_used"),
         }).execute()
     except Exception as e:
         raise HTTPException(
@@ -55,6 +65,28 @@ def save_report(analysis_data: dict) -> dict:
         )
 
     return analysis_data
+
+
+def _row_to_report(row: dict) -> dict:
+    """Reshapes a DB row back into the AnalysisResponse shape."""
+    model_used = row.get("model_used")
+    return {
+        "report_id": row["report_id"],
+        "pr_url": row["pr_url"],
+        "repo": row["repo"],
+        "pr_title": row["pr_title"],
+        "author": row["author"],
+        "created_at": row["created_at"],
+        "overall_risk_score": row["risk_score"],
+        "confidence": row["confidence"],
+        "merge_recommendation": row["recommendation"],
+        "summary": row["summary"],
+        "files": row["files"],
+        "risk_factors": row.get("risk_factors") or [],
+        "model_used": model_used,
+        "fallback_used": bool(model_used) and "fallback" in model_used,
+    }
+
 
 def get_report(report_id: str) -> dict:
     """
@@ -74,50 +106,56 @@ def get_report(report_id: str) -> dict:
     if not result.data:
         raise HTTPException(status_code=404, detail="Report not found.")
 
-    row = result.data[0]
+    return _row_to_report(result.data[0])
 
-    return {
-        "report_id": row["report_id"],
-        "pr_url": row["pr_url"],
-        "repo": row["repo"],
-        "pr_title": row["pr_title"],
-        "author": row["author"],
-        "created_at": row["created_at"],
-        "overall_risk_score": row["risk_score"],
-        "confidence": row["confidence"],
-        "merge_recommendation": row["recommendation"],
-        "summary": row["summary"],
-        "files": row["files"],
-        "risk_factors": row["risk_factors"],
-    }
 
-def get_repo_risk_scores(repo: str, exclude_report_id: str) -> list[int]:
+def get_repo_risk_scores(repo: str, exclude_report_id: str, model_used: str) -> list[int]:
+    """
+    Risk scores of OTHER PRs in the same repo, analyzed with the SAME model
+    (exact match on model_used, including fallback labels — a Groq fallback
+    from Gemini is only compared against other Groq-fallback-from-Gemini
+    reports, consistent with find_cached_report's exact-match rule).
+    Every version of the current PR is excluded, so a re-analysis isn't
+    compared against its own earlier versions.
+    """
     sb = get_client()
 
     try:
-        result = sb.table("reports").select("risk_score, report_id, pr_url").eq("repo", repo).execute()
+        result = (
+            sb.table("reports")
+            .select("risk_score, report_id, pr_url, model_used")
+            .eq("repo", repo)
+            .execute()
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch repo history from database: {str(e)}"
         )
 
-    # Find the PR this report belongs to, then exclude every version of that PR
     current_pr_url = next(
-        (row["pr_url"] for row in result.data if row["report_id"] == exclude_report_id),
+        (_normalize_url(row["pr_url"]) for row in result.data if row["report_id"] == exclude_report_id),
         None,
     )
 
     return [
         row["risk_score"]
         for row in result.data
-        if row["report_id"] != exclude_report_id and row["pr_url"] != current_pr_url
+        if row["report_id"] != exclude_report_id
+        and _normalize_url(row["pr_url"]) != current_pr_url
+        and row.get("model_used") == model_used
     ]
 
-def find_cached_report(pr_url: str, diff_hash: str) -> dict | None:
+
+def find_cached_report(pr_url: str, diff_hash: str, model: str) -> dict | None:
     """
-    Checks if a report already exists for this exact PR URL + diff content.
-    Returns the cached report if found, otherwise None.
+    Checks if a report already exists for this exact PR URL + diff content
+    + requested model.
+
+    The match on model_used is EXACT. A report whose primary model fell back
+    to Groq (model_used = "... (fallback from X)") is NOT a cache hit for a
+    request for X, because it reflects Groq's scoring, not X's. The trade-off
+    is that such requests re-run each time the primary model keeps failing.
     """
     sb = get_client()
 
@@ -125,9 +163,8 @@ def find_cached_report(pr_url: str, diff_hash: str) -> dict | None:
         result = (
             sb.table("reports")
             .select("*")
-            .eq("pr_url", pr_url)
+            .eq("pr_url", _normalize_url(pr_url))
             .eq("diff_hash", diff_hash)
-            .limit(1)
             .execute()
         )
     except Exception as e:
@@ -139,22 +176,18 @@ def find_cached_report(pr_url: str, diff_hash: str) -> dict | None:
     if not result.data:
         return None
 
-    row = result.data[0]
+    model_key = MODEL_ALIASES.get(model, model)
+    expected_label = MODEL_LABELS.get(model_key)
 
-    return {
-        "report_id": row["report_id"],
-        "pr_url": row["pr_url"],
-        "repo": row["repo"],
-        "pr_title": row["pr_title"],
-        "author": row["author"],
-        "created_at": row["created_at"],
-        "overall_risk_score": row["risk_score"],
-        "confidence": row["confidence"],
-        "merge_recommendation": row["recommendation"],
-        "summary": row["summary"],
-        "files": row["files"],
-        "risk_factors": row.get("risk_factors") or [],
-    }
+    matching_row = next(
+        (row for row in result.data if row.get("model_used") == expected_label),
+        None,
+    )
+
+    if not matching_row:
+        return None
+
+    return _row_to_report(matching_row)
 
 
 def list_reports(limit: int = 20) -> list[dict]:
@@ -166,7 +199,7 @@ def list_reports(limit: int = 20) -> list[dict]:
     try:
         result = (
             sb.table("reports")
-            .select("report_id, pr_title, pr_url, repo, diff_hash, author, created_at, confidence, risk_score")
+            .select("report_id, pr_title, pr_url, repo, author, created_at, confidence, risk_score, diff_hash, model_used")
             .order("created_at", desc=True)
             .limit(limit)
             .execute()

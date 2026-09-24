@@ -13,6 +13,7 @@ import RiskComparisonCard from '../components/RiskComparisonCard'
 import RiskPercentileChart from '../components/RiskPercentileChart'
 import PRChatWidget from '../components/PRChatWidget'
 import RiskBreakdownList from '../components/RiskBreakdownList'
+import ModelBadge from '../components/ModelBadge'
 
 // TEMP DEBUG TOGGLE — DO NOT COMMIT AS NON-NULL. Remove this whole block 
 // once visual verification is complete.
@@ -235,7 +236,8 @@ export default function ReportPage() {
                 </div>
               </div>
               
-              <div className="text-right">
+              <div className="text-right space-y-1.5">
+                <ModelBadge modelUsed={data.model_used} className="justify-end" />
                 <span className="text-xs text-on-surface-variant tech-mono font-medium">TARGET: main</span>
               </div>
             </section>
