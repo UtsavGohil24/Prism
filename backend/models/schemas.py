@@ -4,6 +4,11 @@ from typing import List, Literal
 
 class AnalysisRequest(BaseModel):
     pr_url: str
+    # "gemini" (default), "qwen", or "glm" — whichever the user picks on
+    # the landing page. Groq (Llama 3.3 70B) is never user-selectable;
+    # it's the silent fallback used if the chosen primary model is
+    # unavailable or hits a transient error (rate limit / overload).
+    model: Literal["gemini", "nemotron", "glm"] = "gemini"
 
 class Bug(BaseModel):
     description: str
@@ -14,7 +19,6 @@ class FileRisk(BaseModel):
     filename: str
     risk_level: Literal["low", "medium", "high"]
     lines_changed: int
-    # Setting default_factory=list ensures Pydantic supplies [] if Gemini forgets to include it!
     bugs: List[Bug] = Field(default_factory=list)
     suggestions: List[str] = Field(default_factory=list)
 
@@ -52,7 +56,9 @@ class AnalysisResponse(BaseModel):
     summary: Summary
     files: List[FileRisk]
     comparison: Comparison
-    risk_factors: List[RiskFactor] 
+    risk_factors: List[RiskFactor]
+    model_used: str | None = None
+    fallback_used: bool = False
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
