@@ -1,14 +1,17 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import ModelSelector from '../components/ModelSelector'
+import { DEFAULT_MODEL } from '../utils/models'
 
 export default function LandingPage() {
   const [url, setUrl] = useState('')
+  const [model, setModel] = useState(DEFAULT_MODEL)
   const navigate = useNavigate()
 
   const handleAnalyze = (e) => {
     e.preventDefault()
     if (!url.trim()) return
-    navigate(`/analyze?url=${encodeURIComponent(url.trim())}`)
+    navigate(`/analyze?url=${encodeURIComponent(url.trim())}&model=${model}`)
   }
 
   const handleNavAnalyzeClick = () => {
@@ -105,6 +108,8 @@ export default function LandingPage() {
                   <span className="material-symbols-outlined absolute right-4 text-on-surface-variant">link</span>
                 </div>
               </div>
+
+              <ModelSelector value={model} onChange={setModel} />
 
               <button
                 type="submit"

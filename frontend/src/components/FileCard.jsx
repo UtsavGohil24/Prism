@@ -50,7 +50,7 @@ export default function FileCard({ file }) {
       </div>
 
       {/* Collapsible Content */}
-      <div className={`transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[1000px] border-t border-outline-variant/30 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}>
+      <div className={`transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[400px] overflow-y-auto border-t border-outline-variant/30 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}>
         <div className="p-5 space-y-4 bg-surface-lowest/40">
           {/* Bugs List */}
           <div>

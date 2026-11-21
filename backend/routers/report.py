@@ -14,7 +14,8 @@ def get_report(report_id: str):
 
         historical_scores = db.get_repo_risk_scores(
             repo=report["repo"],
-            exclude_report_id=report_id
+            exclude_report_id=report_id,
+            model_used=report["model_used"],
         )
         report["comparison"] = compute_comparison(
             report["overall_risk_score"], historical_scores, report["repo"]
@@ -32,7 +33,8 @@ def get_risk_comparison(report_id: str):
         current = db.get_report(report_id)
         historical_scores = db.get_repo_risk_scores(
             repo=current["repo"],
-            exclude_report_id=report_id
+            exclude_report_id=report_id,
+            model_used=current["model_used"],
         )
         comparison = compute_comparison(
             current["overall_risk_score"],

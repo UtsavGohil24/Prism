@@ -1,7 +1,15 @@
 import apiClient from '../lib/apiClient'
 
-export const analyzePR = (prUrl) =>
-  apiClient.post(`/analyze`, { pr_url: prUrl }).then(r => r.data)
+// Analysis can take a while: a free-tier model may stall before the backend
+// falls back to Groq. apiClient has no timeout of its own, so this is a
+// generous safety net (5 min) rather than the normal path.
+const ANALYZE_TIMEOUT_MS = 300_000
+
+// model: "gemini" | "nemotron" | "glm" (must match the backend's AnalysisRequest)
+export const analyzePR = (prUrl, model = 'gemini') =>
+  apiClient
+    .post(`/analyze`, { pr_url: prUrl, model }, { timeout: ANALYZE_TIMEOUT_MS })
+    .then(r => r.data)
 
 export const getReport = (reportId) =>
   apiClient.get(`/report/${reportId}`).then(r => r.data)

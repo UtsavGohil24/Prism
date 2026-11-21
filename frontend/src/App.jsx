@@ -21,6 +21,7 @@ function App() {
             <Route path="/analyze" element={<AnalyzePage />} />
             <Route path="/report/:report_id" element={<ErrorBoundary><ReportPage /></ErrorBoundary>} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/history/:model" element={<HistoryPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>

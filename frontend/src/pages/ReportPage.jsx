@@ -12,6 +12,13 @@ import SettingsDrawer from '../components/SettingsDrawer'
 import RiskComparisonCard from '../components/RiskComparisonCard'
 import RiskPercentileChart from '../components/RiskPercentileChart'
 import PRChatWidget from '../components/PRChatWidget'
+import RiskBreakdownList from '../components/RiskBreakdownList'
+import ModelBadge from '../components/ModelBadge'
+
+// TEMP DEBUG TOGGLE — DO NOT COMMIT AS NON-NULL. Remove this whole block 
+// once visual verification is complete.
+const MOCK_COMPARISON_STATE = null; 
+// Set to 'insufficient' | 'active' | null to preview states.
 
 export default function ReportPage() {
   const { report_id } = useParams()
@@ -229,7 +236,8 @@ export default function ReportPage() {
                 </div>
               </div>
               
-              <div className="text-right">
+              <div className="text-right space-y-1.5">
+                <ModelBadge modelUsed={data.model_used} className="justify-end" />
                 <span className="text-xs text-on-surface-variant tech-mono font-medium">TARGET: main</span>
               </div>
             </section>
@@ -348,6 +356,14 @@ export default function ReportPage() {
                 </div>
               </section>
             )}
+
+            {/* Explainable Risk Breakdown Section */}
+            <section className="space-y-4">
+              <RiskBreakdownList 
+                riskFactors={data.risk_factors || []} 
+                overallRiskScore={data.overall_risk_score || 0} 
+              />
+            </section>
 
             {/* 5. File Heatmap Section */}
             <section className="space-y-4">

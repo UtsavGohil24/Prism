@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react'
+import { getModel } from '../utils/models'
 
-export default function LoadingScreen({ onFinished }) {
+export default function LoadingScreen({ onFinished, model }) {
   const [step, setStep] = useState(1)
+  const [seconds, setSeconds] = useState(0)
+  const m = model ? getModel(model) : null
 
   useEffect(() => {
     // Advance steps sequentially with fast timing for quick response
@@ -18,9 +21,17 @@ export default function LoadingScreen({ onFinished }) {
     }
   }, [onFinished])
 
+  // Elapsed-time counter: the animated steps finish in ~1s, but the real
+  // analysis can take much longer (especially free-tier models), so show
+  // that something is still happening.
+  useEffect(() => {
+    const id = setInterval(() => setSeconds((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+
   const steps = [
     { id: 1, label: 'Fetching PR diff from GitHub...' },
-    { id: 2, label: 'Running AI risk analysis...' },
+    { id: 2, label: m ? `Running risk analysis with ${m.full}...` : 'Running AI risk analysis...' },
     { id: 3, label: 'Building your report...' }
   ]
 
@@ -47,10 +58,9 @@ export default function LoadingScreen({ onFinished }) {
           {steps.map((s) => {
             const isCompleted = step > s.id
             const isActive = step === s.id
-            const isPending = step < s.id
 
             return (
-              <div 
+              <div
                 key={s.id}
                 className={`flex items-center gap-3 p-3.5 rounded-lg border transition-all duration-300 ${isActive ? 'bg-accent/5 border-accent text-textpri scale-[1.02]' : 'bg-bg/25 border-border/50 text-textmuted'}`}
               >
@@ -77,6 +87,25 @@ export default function LoadingScreen({ onFinished }) {
             )
           })}
         </div>
+      </div>
+
+      {/* Elapsed time + slow-model notice */}
+      <div className="w-full max-w-md mt-5 text-center space-y-1.5">
+        <p className="text-xs text-textmuted">
+          {m && <>Model: <span className="text-white font-semibold">{m.full}</span> &middot; </>}
+          {seconds}s elapsed
+        </p>
+        {m?.slow && (
+          <p className="text-xs text-textmuted leading-relaxed">
+            Free-tier models can be slow. If this one stalls or fails, the analysis
+            automatically falls back to Groq.
+          </p>
+        )}
+        {seconds > 90 && (
+          <p className="text-xs text-textmuted leading-relaxed">
+            Still working. Larger diffs take longer, so you can keep this tab open.
+          </p>
+        )}
       </div>
     </div>
   )

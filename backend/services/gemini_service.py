@@ -4,7 +4,12 @@ import json
 import hashlib
 import uuid
 from datetime import datetime, timezone
-from services.llm_client import generate_analysis_with_fallback
+from services.llm_client import (
+    generate_analysis_with_fallback,
+    strip_json_fences,
+    LLMConfigError,
+    LLMUnavailableError,
+)
 from fastapi import HTTPException
 from models.schemas import AnalysisResponse
 from dotenv import load_dotenv
@@ -153,14 +158,63 @@ def dedupe_risk_factors(factors: list[dict]) -> list[dict]:
         })
     return result
 
-def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=500,
-            detail="Gemini API Key missing. Ensure GEMINI_API_KEY is defined in your .env file."
-        )
 
+# ---- Output validation / normalization (needed for non-Gemini models) --------
+
+_RISK_LEVELS = {"low", "medium", "high"}
+_SEVERITIES = {"minor", "moderate", "critical"}
+
+
+def normalize_analysis(data: dict) -> dict:
+    """
+    Repairs the most common shape problems in model output so one sloppy
+    field doesn't crash the whole request: uppercase enums, bugs returned
+    as plain strings, missing optional fields, wrong types.
+    """
+    files = []
+    for f in data.get("files") or []:
+        if not isinstance(f, dict):
+            continue
+
+        f["filename"] = str(f.get("filename") or "unknown")
+
+        risk = str(f.get("risk_level", "low")).lower()
+        f["risk_level"] = risk if risk in _RISK_LEVELS else "medium"
+
+        try:
+            f["lines_changed"] = int(f.get("lines_changed", 0))
+        except (TypeError, ValueError):
+            f["lines_changed"] = 0
+
+        bugs = []
+        for b in f.get("bugs") or []:
+            if isinstance(b, str):
+                b = {"description": b}
+            if not isinstance(b, dict):
+                continue
+            severity = str(b.get("severity", "minor")).lower()
+            line_ref = b.get("line_reference")
+            bugs.append({
+                "description": str(b.get("description", "")),
+                "severity": severity if severity in _SEVERITIES else "minor",
+                "line_reference": str(line_ref) if line_ref is not None else None,
+            })
+        f["bugs"] = bugs
+        f["suggestions"] = [str(s) for s in (f.get("suggestions") or [])]
+        files.append(f)
+
+    data["files"] = files
+
+    confidence = str(data.get("confidence", "medium")).lower()
+    data["confidence"] = confidence if confidence in _RISK_LEVELS else "medium"
+
+    if not data.get("merge_recommendation"):
+        data["merge_recommendation"] = "Review the flagged findings before merging."
+
+    return data
+
+
+def analyze_code_diff(raw_diff: str, pr_url: str, model: str = "gemini") -> dict:
     filenames = extract_filenames(raw_diff)
     expected_file_count = len(filenames)
     print(f"[DEBUG] Files detected in diff: {expected_file_count} — {filenames}")
@@ -213,7 +267,7 @@ def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
     "or spans multiple locations without one specific line, leave `line_reference` as null.\n"
     )
 
-    # Explicitly hand Gemini the filename list and a hard count requirement,
+    # Explicitly hand the model the filename list and a hard count requirement,
     # rather than relying on it to enumerate the diff correctly on its own.
     if expected_file_count > 0:
         file_list_str = "\n".join(f"- {f}" for f in filenames)
@@ -224,38 +278,35 @@ def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
             f"Analyze this raw git patch text:\n\n{raw_diff}"
         )
     else:
-        # Fallback: couldn't parse any file headers ourselves, let Gemini try anyway
+        # Fallback: couldn't parse any file headers ourselves, let the model try anyway
         contents = f"Analyze this raw git patch text:\n\n{raw_diff}"
 
+    def validate_output(text: str) -> None:
+        """Runs inside the LLM client: a failure here triggers the Groq fallback."""
+        try:
+            data = json.loads(strip_json_fences(text))
+        except json.JSONDecodeError:
+            raise ValueError("malformed or truncated JSON (the diff may be too large)")
+        if not isinstance(data, dict) or not isinstance(data.get("files"), list):
+            raise ValueError("response is missing a valid 'files' array")
+        if expected_file_count > 0 and len(data["files"]) < expected_file_count:
+            raise ValueError(
+                f"only {len(data['files'])}/{expected_file_count} files were analyzed"
+            )
+
     try:
-        raw_text, fallback_used = generate_analysis_with_fallback(
-            api_key=api_key,
+        raw_text, model_used = generate_analysis_with_fallback(
             contents=contents,
             system_instruction=system_instruction,
             response_schema=AnalysisResponse,
+            requested_model=model,
+            validate_fn=validate_output,
         )
 
-        try:
-            analysis_data = json.loads(raw_text)
-        except json.JSONDecodeError:
-            raise HTTPException(
-                status_code=502,
-                detail="Gemini returned malformed or truncated JSON — the diff may be too large. Consider chunking."
-            )
+        analysis_data = normalize_analysis(json.loads(strip_json_fences(raw_text)))
 
-        # --- Consistency check: did Gemini actually cover every file? ---
-        actual_file_count = len(analysis_data.get("files", []))
-        if expected_file_count > 0 and actual_file_count < expected_file_count:
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    f"Gemini analyzed {actual_file_count}/{expected_file_count} files in the diff — "
-                    f"incomplete analysis. Expected files: {filenames}"
-                )
-            )
-
-        # --- Recompute summary programmatically 
-        files = analysis_data.get("files", [])
+        # --- Recompute summary programmatically
+        files = analysis_data["files"]
         analysis_data["summary"] = {
             "total_files": len(files),
             "high_risk_files": sum(1 for f in files if f.get("risk_level", "").lower() == "high"),
@@ -279,7 +330,7 @@ def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
 
         # --- Collapse duplicate factor types into one entry each, for clean display ---
         analysis_data["risk_factors"] = dedupe_risk_factors(analysis_data["risk_factors"])
-        
+
         # --- Recompute overall_risk_score programmatically
         analysis_data["overall_risk_score"] = compute_risk_score(files, analysis_data["risk_factors"])
 
@@ -287,20 +338,25 @@ def analyze_code_diff(raw_diff: str, pr_url: str) -> dict:
         analysis_data["pr_url"] = pr_url
         analysis_data["report_id"] = f"REP-{uuid.uuid4().hex[:8].upper()}"
         analysis_data["created_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        analysis_data["fallback_used"] = fallback_used
+        analysis_data["model_used"] = model_used
+        analysis_data["fallback_used"] = "fallback" in model_used
         analysis_data["repo"] = extract_repo(pr_url)
 
-        if not analysis_data.get("pr_title") or analysis_data["pr_title"] == "":
+        if not analysis_data.get("pr_title"):
             analysis_data["pr_title"] = "Pull Request Optimization Review"
-        if not analysis_data.get("author") or analysis_data["author"] == "":
+        if not analysis_data.get("author"):
             analysis_data["author"] = "GitHub Contributor"
 
         return analysis_data
 
     except HTTPException:
-        raise  # let deliberately-raised HTTPExceptions (502, etc.) bubble up untouched
+        raise  # let deliberately-raised HTTPExceptions bubble up untouched
+    except LLMConfigError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except LLMUnavailableError as e:
+        raise HTTPException(status_code=502, detail=f"AI analysis failed: {str(e)}")
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Gemini Analysis Execution Failed: {str(e)}"
+            detail=f"Analysis processing failed ({type(e).__name__}): {str(e)}"
         )
