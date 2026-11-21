@@ -1,0 +1,27 @@
+
+{
+  "manifest_version": 3,
+  "name": "PRism - AI Code Review",
+  "version": "1.0.0",
+  "description": "Analyze GitHub Pull Requests using PRism AI.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://github.com/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Analyze with PRism"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+"content_scripts": [{
+  "matches": ["https://github.com/*"],
+  "js": ["content.js"],
+  "run_at": "document_idle"
+}]
+}

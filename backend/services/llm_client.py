@@ -1,293 +1,415 @@
-"""
-Multi-model LLM client for Prism.
-
-Selectable primary models (user picks one on the landing page):
-  - "gemini" (default): Gemini 2.5 Flash, native SDK, strict
-    response_schema structured output.
-  - "nemotron": NVIDIA Nemotron via OpenRouter's free tier.
-  - "glm": GLM via OpenRouter's free tier.
-
-("qwen" is accepted as an alias for "nemotron" for older frontends.)
-
-Groq is NEVER user-selectable. It's the shared fallback behind all three
-primaries.
-
-A fallback to Groq happens when the primary model:
-  - errors (rate limit, overload, model retired from the free tier), OR
-  - returns output that fails the caller's validation (malformed JSON,
-    missing files, etc.).
-A missing API key is a config problem and is surfaced directly instead.
-
-Only Gemini gets the schema as a hard API-level constraint. For every other
-model the JSON Schema is appended to the system prompt, otherwise they guess
-the field names.
-"""
-
 import os
 import json
 import time
-import logging
+import re
 
-from google import genai
-from google.genai import types
-from google.genai.errors import APIError as GeminiAPIError
+from dotenv import load_dotenv
 
-logger = logging.getLogger("prism.llm_client")
+load_dotenv()
+
+# --------------------------------------------------
+# MODEL CONFIGURATION
+# --------------------------------------------------
 
 GEMINI_MODEL = "gemini-2.5-flash"
-NEMOTRON_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
-GLM_MODEL = "z-ai/glm-5.2:free"
+COHERE_MODEL = "command-a-plus-05-2026"
+CLOUDFLARE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 GROQ_MODEL = "openai/gpt-oss-120b"
 
-# Maps the user-facing key -> the model label stored in reports.model_used
-MODEL_LABELS = {
-    "gemini": GEMINI_MODEL,
-    "nemotron": NEMOTRON_MODEL,
-    "glm": GLM_MODEL,
-}
-MODEL_ALIASES = {"qwen": "nemotron"}
-
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
-MAX_RETRIES = 3
-BASE_BACKOFF_SECONDS = 1.5  # 1.5s, 3s, 6s
+MODEL_LABELS = {
+    "gemini": "Gemini 2.5 Flash",
+    "cohere": "Cohere Command A+",
+    "llama": "Llama 3.3 70B (Cloudflare)",
+}
 
-# Codes worth retrying the SAME model for (genuinely transient load issues)
-RETRYABLE_HTTP_CODES = {429, 500, 502, 503}
+MODEL_ALIASES = {}
 
+RETRY_ATTEMPTS = 3
+RETRY_DELAY = 1.5
+RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+
+
+# --------------------------------------------------
+# ERRORS
+# --------------------------------------------------
 
 class LLMUnavailableError(Exception):
-    """Raised when the requested model AND the fallback both fail."""
+    pass
 
 
 class LLMConfigError(Exception):
-    """Raised when a required API key for the requested model is missing."""
+    pass
 
 
-class _EmptyCompletion(Exception):
-    """OpenRouter returned HTTP 200 with an error body / no choices.
-    Usually a transient upstream problem on the free tier, so it is retried."""
-
-
-# ---- helpers ---------------------------------------------------------------
+# --------------------------------------------------
+# JSON HELPERS
+# --------------------------------------------------
 
 def strip_json_fences(text: str) -> str:
-    """
-    Cleans typical non-Gemini output: markdown fences and any text before the
-    first '{' or after the last '}'.
-    """
-    text = (text or "").strip()
-    if text.startswith("```"):
-        text = text.strip("`").strip()
-        if text.lower().startswith("json"):
-            text = text[4:].strip()
-    start, end = text.find("{"), text.rfind("}")
-    if start != -1 and end > start:
-        text = text[start:end + 1]
+    text = text.strip()
+
+    text = re.sub(
+        r"^```(?:json)?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(r"\s*```$", "", text)
+
     return text.strip()
 
 
-def _with_schema(system_instruction: str, response_schema) -> str:
-    """Appends the JSON Schema so non-Gemini models use the exact field names."""
-    schema = json.dumps(response_schema.model_json_schema(), indent=2)
-    return (
-        system_instruction
-        + "\n\nCRITICAL: Respond with ONE raw JSON object and nothing else "
-        "(no markdown fences, no explanation). It must validate against this "
-        "JSON Schema and use exactly these field names:\n"
-        + schema
-    )
+def _schema_to_json_schema(response_schema):
+    if hasattr(response_schema, "model_json_schema"):
+        return response_schema.model_json_schema()
+
+    if hasattr(response_schema, "schema"):
+        return response_schema.schema()
+
+    if isinstance(response_schema, dict):
+        return response_schema
+
+    return None
 
 
-def _with_retries(call_fn, is_retryable_fn, label: str) -> str:
+def _with_retries(fn):
     last_error = None
-    for attempt in range(1, MAX_RETRIES + 1):
+
+    for attempt in range(RETRY_ATTEMPTS):
         try:
-            return call_fn()
+            return fn()
+
         except Exception as e:
-            if is_retryable_fn(e):
-                last_error = e
-                wait = BASE_BACKOFF_SECONDS * (2 ** (attempt - 1))
-                logger.warning(
-                    f"[{label}] retryable error on attempt {attempt}/{MAX_RETRIES}: "
-                    f"{type(e).__name__}: {e}. Retrying in {wait:.1f}s..."
-                )
-                time.sleep(wait)
-            else:
-                # Non-retryable for THIS model (e.g. model retired, bad request).
-                logger.warning(f"[{label}] non-retryable error, will fall back: {type(e).__name__}: {e}")
-                raise LLMUnavailableError(f"{label} unavailable: {e}") from e
-    raise LLMUnavailableError(f"{label} failed after {MAX_RETRIES} attempts: {last_error}")
+            last_error = e
+
+            status = getattr(e, "status_code", None)
+
+            response = getattr(e, "response", None)
+            if status is None and response is not None:
+                status = getattr(response, "status_code", None)
+
+            if status is not None:
+                try:
+                    status = int(status)
+                except (TypeError, ValueError):
+                    status = None
+
+            if status not in RETRYABLE_STATUS_CODES:
+                raise LLMUnavailableError(str(e)) from e
+
+            if attempt < RETRY_ATTEMPTS - 1:
+                time.sleep(RETRY_DELAY * (2 ** attempt))
+
+    raise LLMUnavailableError(str(last_error)) from last_error
 
 
-# ---- Gemini ----------------------------------------------------------------
+def _validate_output(text, validate_fn=None):
+    cleaned = strip_json_fences(text)
 
-def _call_gemini(contents: str, system_instruction: str, response_schema) -> str:
-    api_key = os.environ.get("GEMINI_API_KEY")
+    try:
+        json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON response: {e}") from e
+
+    if validate_fn:
+        validate_fn(cleaned)
+
+    return cleaned
+
+
+# --------------------------------------------------
+# GEMINI
+# --------------------------------------------------
+
+def _generate_gemini(
+    contents,
+    system_instruction,
+    response_schema
+):
+    from google import genai
+    from google.genai import types
+
+    api_key = os.getenv("GEMINI_API_KEY")
+
     if not api_key:
         raise LLMConfigError("GEMINI_API_KEY is missing.")
 
     client = genai.Client(api_key=api_key)
 
-    def do_call():
+    schema = _schema_to_json_schema(response_schema)
+
+    config = types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        response_mime_type="application/json",
+        response_schema=schema,
+        temperature=0,
+    )
+
+    def request():
         response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                response_schema=response_schema,
-                temperature=0.0,
-                max_output_tokens=16384,
-            ),
+            config=config,
         )
-        if not response or not response.text:
-            raise ValueError("Empty response from Gemini")
+
+        if not response.text:
+            raise ValueError("Gemini returned an empty response.")
+
         return response.text
 
-    def is_retryable(e):
-        return isinstance(e, GeminiAPIError) and e.code in RETRYABLE_HTTP_CODES
-
-    return _with_retries(do_call, is_retryable, "Gemini")
+    return _with_retries(request)
 
 
-# ---- OpenRouter (shared helper for Nemotron + GLM) --------------------------
+# --------------------------------------------------
+# COHERE
+# --------------------------------------------------
 
-def _call_openrouter(model_id: str, contents: str, system_instruction: str, label: str) -> str:
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+def _generate_cohere(
+    contents,
+    system_instruction,
+    response_schema
+):
+    import cohere
+
+    api_key = os.getenv("COHERE_API_KEY")
+
     if not api_key:
-        raise LLMConfigError("OPENROUTER_API_KEY is missing.")
+        raise LLMConfigError("COHERE_API_KEY is missing.")
 
-    from openai import OpenAI, RateLimitError, APIStatusError
+    client = cohere.ClientV2(api_key=api_key)
 
-    client = OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
+    schema = _schema_to_json_schema(response_schema)
 
-    def do_call():
-        completion = client.chat.completions.create(
-            model=model_id,
+    response_format = {"type": "json_object"}
+
+    if schema:
+        response_format["schema"] = schema
+
+    def request():
+        response = client.chat(
+            model=COHERE_MODEL,
             messages=[
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": contents},
+                {
+                    "role": "system",
+                    "content": system_instruction,
+                },
+                {
+                    "role": "user",
+                    "content": contents,
+                },
             ],
-            temperature=0.2,
+            response_format=response_format,
+            temperature=0,
         )
-        # OpenRouter free models often return 200 with an error body and
-        # choices=None instead of raising. Detect that and retry.
-        if not getattr(completion, "choices", None):
-            detail = getattr(completion, "model_extra", None) or completion
-            raise _EmptyCompletion(f"no choices returned: {detail}")
-        content = completion.choices[0].message.content
-        if not content:
-            raise _EmptyCompletion("empty content returned")
-        return strip_json_fences(content)
 
-    def is_retryable(e):
-        if isinstance(e, (RateLimitError, _EmptyCompletion)):
-            return True
-        return isinstance(e, APIStatusError) and e.status_code in RETRYABLE_HTTP_CODES
-        # A 404 "model retired from free tier" is NOT retryable: it becomes
-        # LLMUnavailableError so the caller falls back to Groq right away.
+        response_content = response.message.content or []
 
-    return _with_retries(do_call, is_retryable, label)
+        text = next(
+            (
+                item.text
+                for item in response_content
+                if getattr(item, "text", None)
+            ),
+            None,
+        )
 
+        if not text:
+            raise ValueError("Cohere returned an empty response.")
 
-def _call_nemotron(contents: str, system_instruction: str) -> str:
-    return _call_openrouter(NEMOTRON_MODEL, contents, system_instruction, "Nemotron")
+        return text
+
+    return _with_retries(request)
 
 
-def _call_glm(contents: str, system_instruction: str) -> str:
-    return _call_openrouter(GLM_MODEL, contents, system_instruction, "GLM")
+# --------------------------------------------------
+# OPENAI-COMPATIBLE PROVIDERS
+# --------------------------------------------------
 
+def _generate_openai_compatible(
+    api_key,
+    base_url,
+    model,
+    contents,
+    system_instruction,
+    response_schema,
+):
+    from openai import OpenAI
 
-# ---- Groq (fallback only, never user-selectable) ----------------------------
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=90,
+        max_retries=0,
+    )
 
-def _call_groq(contents: str, system_instruction: str) -> str:
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        raise LLMConfigError("GROQ_API_KEY is missing, fallback unavailable.")
+    schema = _schema_to_json_schema(response_schema)
 
-    from openai import OpenAI, RateLimitError, APIStatusError  # Groq is OpenAI-compatible
+    system_prompt = system_instruction
 
-    client = OpenAI(api_key=api_key, base_url=GROQ_BASE_URL)
+    if schema:
+        system_prompt += (
+            "\n\nReturn valid JSON matching this schema:\n"
+            + json.dumps(schema)
+        )
 
-    def do_call():
-        completion = client.chat.completions.create(
-            model=GROQ_MODEL,
+    def request():
+        response = client.chat.completions.create(
+            model=model,
             messages=[
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": contents},
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": contents,
+                },
             ],
-            temperature=0.2,
+            temperature=0,
+            max_tokens=8192,
             response_format={"type": "json_object"},
         )
-        if not getattr(completion, "choices", None):
-            raise _EmptyCompletion("Groq returned no choices")
-        content = completion.choices[0].message.content
-        if not content:
-            raise _EmptyCompletion("Groq returned empty content")
-        return strip_json_fences(content)
 
-    def is_retryable(e):
-        if isinstance(e, (RateLimitError, _EmptyCompletion)):
-            return True
-        return isinstance(e, APIStatusError) and e.status_code in RETRYABLE_HTTP_CODES
+        text = response.choices[0].message.content
+        # TEMPORARY DEBUG LOGS
+        print("[DEBUG] Provider:", model)
+        print("[DEBUG] Finish reason:", response.choices[0].finish_reason)
+        print("[DEBUG] Response length:", len(text or ""))
+        print("[DEBUG] Response ending:", repr((text or "")[-300:]))
 
-    return _with_retries(do_call, is_retryable, "Groq")
+        if not text:
+            raise ValueError(f"{model} returned an empty response.")
+
+        return text
+
+    return _with_retries(request)
 
 
-# ---- Public entry point ------------------------------------------------------
+# --------------------------------------------------
+# CLOUDFLARE LLAMA
+# --------------------------------------------------
 
-def generate_analysis_with_fallback(contents: str, system_instruction: str,
-                                    response_schema,
-                                    requested_model: str = "gemini",
-                                    validate_fn=None) -> tuple[str, str]:
-    """
-    Returns (raw_json_text, model_used).
+def _generate_llama(
+    contents,
+    system_instruction,
+    response_schema
+):
+    api_token = os.getenv("CLOUDFLARE_API_TOKEN")
+    account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID")
 
-    requested_model: "gemini" | "nemotron" | "glm" (the user's pick).
-    validate_fn: optional callable(text) that raises ValueError if the output
-        is unusable (bad JSON, missing files...). A failed validation counts
-        as a primary-model failure and triggers the Groq fallback. If the
-        fallback output also fails validation, LLMUnavailableError is raised.
-    """
-    requested_model = MODEL_ALIASES.get(requested_model, requested_model)
+    if not api_token:
+        raise LLMConfigError("CLOUDFLARE_API_TOKEN is missing.")
 
-    # Non-Gemini models need the schema spelled out in the prompt.
-    schema_instruction = _with_schema(system_instruction, response_schema)
+    if not account_id:
+        raise LLMConfigError("CLOUDFLARE_ACCOUNT_ID is missing.")
 
-    dispatch = {
-        "gemini": lambda: _call_gemini(contents, system_instruction, response_schema),
-        "nemotron": lambda: _call_nemotron(contents, schema_instruction),
-        "glm": lambda: _call_glm(contents, schema_instruction),
+    base_url = (
+        f"https://api.cloudflare.com/client/v4/accounts/"
+        f"{account_id}/ai/v1"
+    )
+
+    return _generate_openai_compatible(
+        api_key=api_token,
+        base_url=base_url,
+        model=CLOUDFLARE_MODEL,
+        contents=contents,
+        system_instruction=system_instruction,
+        response_schema=response_schema,
+    )
+
+
+# --------------------------------------------------
+# GROQ FALLBACK
+# --------------------------------------------------
+
+def _generate_groq(
+    contents,
+    system_instruction,
+    response_schema
+):
+    api_key = os.getenv("GROQ_API_KEY")
+
+    if not api_key:
+        raise LLMConfigError(
+            "GROQ_API_KEY is missing. Automatic fallback is unavailable."
+        )
+
+    return _generate_openai_compatible(
+        api_key=api_key,
+        base_url=GROQ_BASE_URL,
+        model=GROQ_MODEL,
+        contents=contents,
+        system_instruction=system_instruction,
+        response_schema=response_schema,
+    )
+
+
+# --------------------------------------------------
+# PUBLIC ENTRY POINT
+# --------------------------------------------------
+
+def generate_analysis_with_fallback(
+    contents: str,
+    system_instruction: str,
+    response_schema,
+    requested_model: str = "gemini",
+    validate_fn=None,
+) -> tuple[str, str]:
+
+    model = MODEL_ALIASES.get(requested_model, requested_model)
+
+    if model not in MODEL_LABELS:
+        raise LLMConfigError(
+            f"Unsupported model: {requested_model}"
+        )
+
+    providers = {
+        "gemini": _generate_gemini,
+        "cohere": _generate_cohere,
+        "llama": _generate_llama,
     }
 
-    if requested_model not in dispatch:
-        raise ValueError(f"Unknown model requested: {requested_model}")
-
-    model_label = MODEL_LABELS[requested_model]
+    primary = providers[model]
 
     try:
-        text = dispatch[requested_model]()
-        if validate_fn:
-            validate_fn(text)
-        return text, model_label
+        raw_text = primary(
+            contents,
+            system_instruction,
+            response_schema,
+        )
+
+        cleaned = _validate_output(raw_text, validate_fn)
+
+        return cleaned, MODEL_LABELS[model]
 
     except LLMConfigError:
-        raise  # missing key: surface directly, don't mask with a fallback
+        raise
 
-    except Exception as e:
-        logger.warning(f"{model_label} failed, falling back to Groq. Reason: {type(e).__name__}: {e}")
+    except Exception as primary_error:
+        print(
+            f"[LLM FALLBACK] {MODEL_LABELS[model]} failed: "
+            f"{type(primary_error).__name__}: {primary_error}"
+        )
+
         try:
-            text = _call_groq(contents, schema_instruction)
-            if validate_fn:
-                validate_fn(text)
-            return text, f"{GROQ_MODEL} (fallback from {model_label})"
-        except LLMConfigError:
-            raise
-        except Exception as fallback_error:
-            logger.error(f"Groq fallback also failed: {type(fallback_error).__name__}: {fallback_error}")
-            raise LLMUnavailableError(
-                f"Both {model_label} and the Groq fallback failed. "
-                f"{model_label}: {e} | Groq: {fallback_error}"
+            fallback_text = _generate_groq(
+                contents,
+                system_instruction,
+                response_schema,
             )
+
+            cleaned = _validate_output(fallback_text, validate_fn)
+
+            return (
+                cleaned,
+                f"Groq GPT-OSS 120B (fallback from {MODEL_LABELS[model]})",
+            )
+
+        except Exception as fallback_error:
+            raise LLMUnavailableError(
+                f"Primary model failed ({primary_error}); "
+                f"Groq fallback also failed ({fallback_error})"
+            ) from fallback_error

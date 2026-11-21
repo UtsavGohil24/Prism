@@ -10,8 +10,9 @@ export default function AnalyzePage() {
   const navigate = useNavigate()
   const prUrl = searchParams.get('url')
 
-  // Model comes from the landing page: /analyze?url=...&model=nemotron
-  // Anything unknown falls back to the default so a bad URL can't break the request.
+  // Model comes from the landing page:
+  // /analyze?url=...&model=gemini|cohere|llama
+  // Unknown model values fall back to Gemini.
   const requestedModel = searchParams.get('model')
   const model = MODELS.some(m => m.key === requestedModel) ? requestedModel : DEFAULT_MODEL
 

@@ -95,12 +95,6 @@ export default function LoadingScreen({ onFinished, model }) {
           {m && <>Model: <span className="text-white font-semibold">{m.full}</span> &middot; </>}
           {seconds}s elapsed
         </p>
-        {m?.slow && (
-          <p className="text-xs text-textmuted leading-relaxed">
-            Free-tier models can be slow. If this one stalls or fails, the analysis
-            automatically falls back to Groq.
-          </p>
-        )}
         {seconds > 90 && (
           <p className="text-xs text-textmuted leading-relaxed">
             Still working. Larger diffs take longer, so you can keep this tab open.
