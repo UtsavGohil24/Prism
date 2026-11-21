@@ -1,0 +1,63 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRism</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="brand">
+        <div class="logo">P</div>
+        <div>
+          <h1>PRism</h1>
+          <p>AI CODE REVIEW</p>
+        </div>
+      </div>
+      <span class="status-dot" title="Extension ready"></span>
+    </header>
+
+    <main>
+      <div class="intro">
+        <h2>Analyze Pull Request</h2>
+        <p>Get an AI-powered security and code quality review.</p>
+      </div>
+
+      <label for="prUrl">GitHub Pull Request URL</label>
+      <input
+        type="url"
+        id="prUrl"
+        placeholder="https://github.com/owner/repo/pull/123"
+      >
+
+      <label for="model">AI Model</label>
+      <select id="model">
+        <option value="gemini">Gemini 2.5 Flash</option>
+        <option value="cohere">Cohere Command A+</option>
+        <option value="llama">Llama 3.3 70B</option>
+      </select>
+
+      <button id="analyzeBtn">
+        <span id="buttonText">Analyze with PRism</span>
+        <span id="buttonIcon">→</span>
+      </button>
+
+      <div id="message" class="message hidden"></div>
+
+      <button id="viewReportBtn" class="hidden">
+        ↗ View Report
+      </button>
+    </main>
+
+    <footer>
+      <span>Powered by PRism AI</span>
+      <span>v1.0.0</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

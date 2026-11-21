@@ -5,7 +5,7 @@ import apiClient from '../lib/apiClient'
 // generous safety net (5 min) rather than the normal path.
 const ANALYZE_TIMEOUT_MS = 300_000
 
-// model: "gemini" | "nemotron" | "glm" (must match the backend's AnalysisRequest)
+// model: "gemini" | "cohere" | "llama" (must match the backend's AnalysisRequest)
 export const analyzePR = (prUrl, model = 'gemini') =>
   apiClient
     .post(`/analyze`, { pr_url: prUrl, model }, { timeout: ANALYZE_TIMEOUT_MS })

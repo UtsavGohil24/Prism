@@ -15,10 +15,6 @@ import PRChatWidget from '../components/PRChatWidget'
 import RiskBreakdownList from '../components/RiskBreakdownList'
 import ModelBadge from '../components/ModelBadge'
 
-// TEMP DEBUG TOGGLE — DO NOT COMMIT AS NON-NULL. Remove this whole block 
-// once visual verification is complete.
-const MOCK_COMPARISON_STATE = null; 
-// Set to 'insufficient' | 'active' | null to preview states.
 
 export default function ReportPage() {
   const { report_id } = useParams()

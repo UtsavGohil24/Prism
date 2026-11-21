@@ -207,7 +207,7 @@ def list_reports(limit: int = 20) -> list[dict]:
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch reports list from database: {str(e)}"
+            detail=f"Failed to check cache in database: {str(e)}"
         )
 
     return result.data
